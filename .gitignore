@@ -1,0 +1,11 @@
+# NGA 的会话凭据（ngaPassportUid / ngaPassportCid）等同密码：
+# 泄漏就等于账号被登录，绝不能提交进仓库。
+.nga/
+
+# 集成测试的依赖
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
