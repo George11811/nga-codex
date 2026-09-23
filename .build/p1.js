@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA · Codex 外观
 // @namespace    https://bbs.nga.cn/
-// @version      1.0.0
+// @version      1.1.0
 // @description  把 NGA 换成 Codex 桌面 app 风格（左 rail + 主区 + 右侧代码面板，明暗双模式），带上班摸鱼用的应急伪装。只改外观，原生 DOM 和站点自己的 JS 全部保留。
 // @author       link（V2EX 版作者）· NGA 移植
 // @match        https://bbs.nga.cn/*
@@ -72,6 +72,14 @@
     panelWidth: 460,
     /** 正文最大宽度 */
     threadMaxWidth: 780,
+    /**
+     * 页面透明度（%）。100 = 不透明。
+     *
+     * 只作用于脚本自绘的两大块 —— 左侧 rail 和主区（CSS 变量 --ngax-opacity 是
+     * 0~1 的无单位数，见 applyVisualSettings）。设置面板 / 灯箱 / 应急伪装视图
+     * 刻意不跟着变淡：前两个正在被操作，后一个必须看起来像另一个 app。
+     */
+    pageOpacity: 100,
     /** 是否显示右侧代码面板（纯氛围装饰） */
     codePanel: true,
     /** 代码面板语言：rust / python / typescript / go / java */
@@ -98,6 +106,19 @@
      * 无论配成什么，Ctrl+Shift+H 始终有效。
      */
     stealthKey: "esc2",
+    /**
+     * 侧边栏模式：实时盯着鼠标，指针一离开页面区域（浏览器视口）就自动切到
+     * 应急伪装 —— 和连按两下 Esc 是同一个视图。默认关。
+     * 需要 stealth 也开着（伪装被禁用时它没有意义）。
+     */
+    sidebarMode: false,
+    /**
+     * 侧边栏模式：鼠标回到页面区域时自动还原。
+     * 只还原「鼠标离开」自动触发的那次；用户自己按应急键进入的伪装不受影响
+     * （手动按应急键也会清掉自动标记，回来后不再替你还原）。
+     * 关掉它就变成单向的：离开即伪装，只能自己按应急键还原。
+     */
+    sidebarRestore: true,
     /** 左栏品牌名。空字符串 = 由 stealth 决定（Codex / NGA） */
     brandName: "",
     /**
@@ -183,6 +204,12 @@
     return custom || (cfg("stealth") ? "Codex" : "NGA");
   }
 
+  /** 透明度设置（滑杆读数是 20~100 %）→ CSS 变量值（0~1 的无单位数） */
+  function opacityVar(pct) {
+    const n = Math.min(100, Math.max(0, Number(pct) || 0));
+    return String(n / 100);
+  }
+
   /**
    * 只改 CSS 变量 / class —— 不重渲染。
    * 拖宽度滑块时走这条，否则每动一格都重排整个列表会很卡。
@@ -194,11 +221,14 @@
     root.style.setProperty("--ngax-thread-max", cfg("threadMaxWidth") + "px");
     root.style.setProperty("--ngax-thumb-w", cfg("thumbWidth") + "px");
     root.style.setProperty("--ngax-thumb-h", cfg("thumbHeight") + "px");
+    root.style.setProperty("--ngax-opacity", opacityVar(cfg("pageOpacity")));
     root.classList.toggle("ngax-no-avatar", !cfg("avatars"));
     syncMode();
     applyFavicon();
     syncTitle();
     setPanelHidden(!cfg("codePanel"), false);
+    // 侧边栏模式的监听随开关挂 / 摘（定义在「隐蔽性」那一段）
+    syncSidebarMode();
   }
 
   /** 完整的应用：视觉 + 重渲染 rail / 列表 / 详情 / 代码面板 */

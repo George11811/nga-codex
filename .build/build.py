@@ -581,6 +581,26 @@ EXTRA_CSS = """
     }
     .ngax-smile-grid button:hover { background: var(--cx-btn-hover); }
     .ngax-smile-grid img { width: 22px; height: 22px; }
+
+    /* ================= NGA 专属：页面透明度 =================
+     *
+     * 值来自设置面板的「页面透明度」滑杆：JS 把 20~100(%) 换算成 0~1 的无单位数
+     * 写在 html 的行内样式上（--ngax-opacity），这里只管用。
+     *
+     * 只作用于脚本自绘的两大块 —— 左 rail 和主区（thread 区 + 代码面板都在里面）。
+     * 刻意**不**碰这三类：
+     *   - 设置面板 / 灯箱 / 悬停大图：正在被操作，半透明只会看不清；
+     *   - 应急伪装视图 .ngax-boss：它必须看起来像另一个 app，发虚就露馅了。
+     * 所以也没有把 opacity 写到 html 根节点上（那会连整个视口一起变淡，
+     * 连带着上面这些一起遭殃）。
+     *
+     * 观感上不是「透出桌面」（浏览器页面做不到），而是正文、卡片、底栏
+     * 一起朝页面背景色退 —— 等于整体压低一档对比度。
+     */
+    html.ngax .ngax-rail,
+    html.ngax .ngax-main {
+      opacity: var(--ngax-opacity, 1);
+    }
 """
 
 

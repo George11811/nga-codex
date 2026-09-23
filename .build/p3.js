@@ -1403,7 +1403,9 @@
 
   /** 切换应急伪装视图。注意：只切外观，不卸载任何真实 DOM，恢复时无损失 */
   function setBoss(on) {
-    if (!cfg("stealth")) return;
+    // 进不进伪装由「伪装模式」开关说了算，但**退出永远允许** ——
+    // 否则在伪装视图里关掉 stealth 会卡在那个假界面上出不来。
+    if (on && !cfg("stealth")) return;
     const box = ensureBoss();
     if (on) {
       // 切进去之前把输入焦点交出去，避免 composer 还在吃按键
@@ -1414,6 +1416,16 @@
       box.hidden = true;
     }
     document.documentElement.classList.toggle("ngax-boss-on", !!on);
+  }
+
+  /**
+   * 用户自己按的应急键 → 清掉「自动」标记。
+   * 否则鼠标回到页面时会把用户手动按出来的这次伪装替你还原掉
+   * （或者反过来：手动退出后鼠标一离开又被自动切进去，看着像失灵）。
+   */
+  function toggleBossManual() {
+    autoBoss = false;
+    setBoss(!bossOn());
   }
 
   /** "ctrl+shift+h" / "f2" 这类组合键匹配 */
@@ -1458,7 +1470,7 @@
         if (now - lastEscAt < 450) {
           lastEscAt = 0;
           e.preventDefault();
-          setBoss(!bossOn());
+          toggleBossManual();
         } else {
           lastEscAt = now;
         }
@@ -1467,9 +1479,82 @@
       if (bossKeyMatch(e, spec) || bossKeyMatch(e, "ctrl+shift+h")) {
         e.preventDefault();
         e.stopPropagation();
-        setBoss(!bossOn());
+        toggleBossManual();
       }
     }, true);
+  }
+
+  /* ============================== 侧边栏模式 ==============================
+   *
+   * 「侧边栏模式」：实时盯着鼠标，指针一离开页面区域（浏览器视口）就自动切到
+   * 应急伪装 —— 用的就是上面 setBoss() 那套视图，跟连按两下 Esc 完全同一个东西。
+   *
+   * 为什么用 mouseout/mouseover + relatedTarget，而不用 window.blur：
+   *   relatedTarget 为 null 表示指针去的是页面之外（浏览器地址栏/书签栏、
+   *   别的窗口、桌面）。blur 太宽了 —— 点一下地址栏、开一下 devtools、
+   *   在 iframe 里点一下都可能 blur，但鼠标其实还停在页面上，
+   *   那不是「离开页面区域」。
+   *
+   * 三处刻意的取舍：
+   *   1. 只自动还原「自动触发」的那次（autoBoss 标记）。用户自己按应急键进出的
+   *      伪装一律不碰：手动进入的不会被鼠标回来还原，手动退出后也不会被
+   *      鼠标一离开又切进去（那看起来就像按键失灵）。
+   *   2. 设置面板开着时不触发 —— 调滑杆时鼠标很容易扫出窗口，
+   *      那时候整屏切成伪装会把正在调的面板盖住。
+   *   3. 「回来自动还原」是个开关（sidebarRestore）：关掉就变单向，
+   *      离开即伪装，只能自己按应急键还原。
+   *
+   * 监听本身随设置挂 / 摘（见 syncSidebarMode），关掉时页面在事件层面
+   * 和没有这个功能完全一样。
+   * ===================================================================== */
+
+  /** 当前这次伪装是不是「鼠标离开」自动触发的 */
+  let autoBoss = false;
+  let sidebarMouseBound = false;
+
+  function sidebarModeWanted() {
+    return !!cfg("sidebarMode") && !!cfg("stealth");
+  }
+
+  function onSidebarMouseOut(e) {
+    if (e.relatedTarget) return;          // 还在文档里，只是从一个元素挪到另一个
+    if (!sidebarModeWanted()) return;
+    if (bossOn()) return;                 // 已经是伪装视图（自动的或手动的）
+    if (settingsOpen()) return;           // 别把用户正在调的设置面板盖掉
+    autoBoss = true;
+    setBoss(true);
+  }
+
+  function onSidebarMouseOver(e) {
+    if (e.relatedTarget) return;          // 文档内部移动，不是从外面回来
+    if (!autoBoss) return;                // 手动进入的伪装不归这里管
+    if (!cfg("sidebarRestore")) return;   // 用户选了「不自动还原」
+    autoBoss = false;
+    if (bossOn()) setBoss(false);
+  }
+
+  function bindSidebarMode() {
+    if (sidebarMouseBound) return;
+    sidebarMouseBound = true;
+    document.addEventListener("mouseout", onSidebarMouseOut, true);
+    document.addEventListener("mouseover", onSidebarMouseOver, true);
+  }
+
+  function unbindSidebarMode() {
+    if (!sidebarMouseBound) return;
+    sidebarMouseBound = false;
+    document.removeEventListener("mouseout", onSidebarMouseOut, true);
+    document.removeEventListener("mouseover", onSidebarMouseOver, true);
+  }
+
+  /** 让监听状态跟上设置：开着就挂，关掉就摘（顺手把自动伪装还原掉） */
+  function syncSidebarMode() {
+    if (sidebarModeWanted()) { bindSidebarMode(); return; }
+    unbindSidebarMode();
+    if (autoBoss) {
+      autoBoss = false;
+      if (bossOn()) setBoss(false);
+    }
   }
 
   /* ============================== 设置面板 ==============================
@@ -1479,13 +1564,26 @@
    * 完整重渲染；否则每动一格都要重排整个列表。
    * =================================================================== */
 
+  /**
+   * 哪些设置直接落在 CSS 变量上（拖滑杆时只改这些，不重渲染）。
+   * unit 是直接拼在数字后面的单位；to 是自定义换算（透明度是 20~100% 的读数 →
+   * 0~1 的无单位数，见 p1 的 opacityVar）。
+   */
   const SETTING_CSS_VAR = {
-    railWidth: "--cx-rail-w",
-    panelWidth: "--ngax-panel-w",
-    threadMaxWidth: "--ngax-thread-max",
-    thumbWidth: "--ngax-thumb-w",
-    thumbHeight: "--ngax-thumb-h"
+    railWidth: { name: "--cx-rail-w", unit: "px" },
+    panelWidth: { name: "--ngax-panel-w", unit: "px" },
+    threadMaxWidth: { name: "--ngax-thread-max", unit: "px" },
+    thumbWidth: { name: "--ngax-thumb-w", unit: "px" },
+    thumbHeight: { name: "--ngax-thumb-h", unit: "px" },
+    pageOpacity: { name: "--ngax-opacity", to: opacityVar }
   };
+
+  /** 设置值 → CSS 变量值（没登记在这张表里的设置返回 null） */
+  function cssVarValue(key, value) {
+    const m = SETTING_CSS_VAR[key];
+    if (!m) return null;
+    return m.to ? m.to(value) : String(value) + (m.unit || "");
+  }
 
   const SETTING_SPEC = [
     { section: "外观", items: [
@@ -1494,6 +1592,8 @@
       { key: "railWidth", type: "range", label: "左栏宽度", min: 200, max: 520, step: 2, unit: "px" },
       { key: "panelWidth", type: "range", label: "代码面板宽度", min: 240, max: 900, step: 4, unit: "px" },
       { key: "threadMaxWidth", type: "range", label: "正文最大宽度", min: 560, max: 1100, step: 10, unit: "px" },
+      { key: "pageOpacity", type: "range", label: "页面透明度", min: 20, max: 100, step: 1, unit: "%",
+        hint: "只把脚本自绘的界面（左栏 + 主区）调淡；设置面板 / 灯箱 / 伪装视图保持不透明" },
       { key: "codePanel", type: "toggle", label: "显示右侧代码面板", hint: "那块代码是假数据，纯氛围" },
       { key: "lang", type: "select", label: "代码面板语言",
         options: () => Object.keys(CODE_LANGS).map((k) => [k, CODE_LANGS[k].label]) },
@@ -1507,6 +1607,10 @@
         hint: "出现在代码面板面包屑和标签页标题里（如 \"forum_cache.rs — platform\"）" },
       { key: "stealthKey", type: "select", label: "应急伪装键", hint: "Ctrl+Shift+H 始终有效",
         options: [["esc2", "连按两下 Esc"], ["f2", "F2"], ["ctrl+shift+h", "Ctrl+Shift+H"]] },
+      { key: "sidebarMode", type: "toggle", label: "侧边栏模式",
+        hint: "鼠标一离开页面区域就自动切到应急伪装（和连按两下 Esc 同一个视图）；需要「伪装模式」开着" },
+      { key: "sidebarRestore", type: "toggle", label: "侧边栏模式：回来自动还原",
+        hint: "只还原「鼠标离开」触发的那次；关掉后离开即伪装，要自己按应急键还原" },
       { key: "favicon", type: "select", label: "标签页图标",
         options: [["codex", "Codex 风格圆角图标"], ["site", "保留 NGA 原图标"]] }
     ] },
@@ -1578,8 +1682,9 @@
 
   /** 拖滑块时的即时预览：只改 CSS 变量，不写存储、不重渲染 */
   function previewSetting(key, value) {
-    const varName = SETTING_CSS_VAR[key];
-    if (varName) document.documentElement.style.setProperty(varName, value + "px");
+    const v = cssVarValue(key, value);
+    if (v === null) return;
+    document.documentElement.style.setProperty(SETTING_CSS_VAR[key].name, v);
   }
 
   /** 把面板里所有控件的状态刷成 cfg() 的当前值 */

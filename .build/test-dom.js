@@ -1408,6 +1408,139 @@ async function testFallback() {
   win.close();
 }
 
+// ── 用例：页面透明度 + 侧边栏模式（设置面板新增的两项）──────────────────
+
+/*
+ * 这两项都是「设置面板 → 立刻影响页面」的链路，也是唯一两处
+ * 「设置值不是直接写进 CSS 像素值」的地方，所以单独押一遍：
+ *   - 透明度：滑杆读数 20~100(%) → CSS 变量 --ngax-opacity 0.2~1（无单位）；
+ *     拖动时只预览、松手才落盘；而且只盖住 rail + 主区。
+ *   - 侧边栏模式：鼠标离开页面区域（mouseout + relatedTarget=null）自动进伪装，
+ *     回来按设置决定是否还原；手动按出来的伪装不受鼠标影响。
+ */
+async function testOpacityAndSidebar() {
+  console.log('\n【透明度 + 侧边栏模式】设置面板新增的滑杆与开关');
+  const { win } = boot('big.u.html');
+  await afterRender(win);
+  const d = win.document;
+  const $ = (s) => d.querySelector(s);
+  const root = d.documentElement;
+  const store = () => win.localStorage.getItem('ngax:settings') || '';
+  const click = (el) => el.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+  // 设置面板也可以按 Ctrl+, 开：伪装视图铺满视口时顶栏的齿轮点不到
+  const settingsKey = () => win.dispatchEvent(new win.KeyboardEvent('keydown', { key: ',', ctrlKey: true, bubbles: true }));
+  // 指针离开 / 回到页面：relatedTarget 为 null = 去了页面之外（浏览器 UI / 别的窗口 / 桌面）
+  const leave = () => d.dispatchEvent(new win.MouseEvent('mouseout', { bubbles: true }));
+  const enter = () => d.dispatchEvent(new win.MouseEvent('mouseover', { bubbles: true }));
+  const bossShown = () => !!$('.ngax-boss') && !$('.ngax-boss').hidden;
+  const esc = () => win.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  // ── 透明度 ──
+  click($('[data-settings-open]'));
+  const range = $('[data-set-range="pageOpacity"]');
+  ok('设置面板里有「页面透明度」滑杆', !!range && range.type === 'range');
+  ok('默认 100%（--ngax-opacity: 1）',
+    !!range && range.value === '100' && root.style.getPropertyValue('--ngax-opacity') === '1',
+    range && (range.value + ' / ' + root.style.getPropertyValue('--ngax-opacity')));
+  range.value = '60';
+  range.dispatchEvent(new win.Event('input', { bubbles: true }));
+  ok('拖动时实时预览（只改 CSS 变量，没落盘）',
+    root.style.getPropertyValue('--ngax-opacity') === '0.6' && !/pageOpacity/.test(store()),
+    root.style.getPropertyValue('--ngax-opacity') + ' / ' + store());
+  const out = $('[data-set-val="pageOpacity"]');
+  ok('滑杆旁边跟着显示读数', !!out && out.textContent === '60%', out && out.textContent);
+  range.dispatchEvent(new win.Event('change', { bubbles: true }));
+  ok('松手后写进 localStorage', /"pageOpacity":60/.test(store()), store());
+
+  // 作用范围：规则真到了元素上（按计算样式押，而不是肉眼读 CSS 字符串），
+  // 而且没顺带盖住设置面板 / 灯箱 / 伪装视图。
+  // 注意 jsdom 不做 var() 代换，getComputedStyle 会原样吐出 var(...) —— 正好用来
+  // 确认「这条规则命中了这个元素」；真正的数值看 html 上的行内自定义属性。
+  ok('CSS 规则只把 rail + 主区调淡',
+    /html\.ngax \.ngax-rail,\s*html\.ngax \.ngax-main\s*\{[^}]*opacity: var\(--ngax-opacity, 1\)/.test(SCRIPT_SRC));
+  ok('主区命中了这条规则（getComputedStyle）',
+    win.getComputedStyle($('.ngax-main')).opacity === 'var(--ngax-opacity, 1)',
+    win.getComputedStyle($('.ngax-main')).opacity);
+  ok('rail 也命中',
+    win.getComputedStyle($('.ngax-rail')).opacity === 'var(--ngax-opacity, 1)',
+    win.getComputedStyle($('.ngax-rail')).opacity);
+  ok('设置面板不受影响（半透明就没法调了）',
+    win.getComputedStyle($('.ngax-modal')).opacity !== 'var(--ngax-opacity, 1)',
+    win.getComputedStyle($('.ngax-modal')).opacity);
+  ok('没有把 opacity 写到 html 根节点上（那会连整个视口一起变淡）',
+    root.style.opacity === '', root.style.opacity);
+
+  // ── 侧边栏模式 ──
+  leave();
+  ok('侧边栏模式默认关：鼠标离开页面不触发伪装', !bossShown());
+
+  const sw = $('[data-set-toggle="sidebarMode"]');
+  ok('设置面板里有「侧边栏模式」开关', !!sw);
+  ok('「回来自动还原」开关也在，默认开',
+    !!$('[data-set-toggle="sidebarRestore"]') &&
+    $('[data-set-toggle="sidebarRestore"]').classList.contains('on'));
+  click(sw);
+  ok('打开侧边栏模式写进 localStorage', /"sidebarMode":true/.test(store()), store());
+  leave();
+  ok('设置面板开着时鼠标离开不切换（别把正在调的界面盖掉）', !bossShown());
+  click($('[data-settings-close]'));
+
+  leave();
+  ok('鼠标离开页面 → 自动进入伪装（和 Esc Esc 同一个视图）',
+    bossShown() && root.classList.contains('ngax-boss-on'));
+  ok('自动进入的伪装视图和手动进入的是同一个（有构建日志）',
+    !!$('.ngax-boss') && /cargo build --release/.test($('.ngax-boss').textContent));
+  enter();
+  ok('鼠标回到页面 → 自动还原', !bossShown() && !root.classList.contains('ngax-boss-on'));
+
+  // 用户自己按出来的伪装不归鼠标管：不然要么被替你还原，要么像按键失灵
+  esc(); esc();
+  ok('手动 Esc Esc 进入伪装', bossShown());
+  enter();
+  ok('手动进入的伪装，鼠标回到页面不会替你还原', bossShown());
+  leave();
+  ok('已经是伪装视图时，鼠标离开不再重复处理', bossShown());
+  esc(); esc();
+  ok('手动退出伪装', !bossShown());
+
+  // 「回来自动还原」关掉 → 单向：离开即伪装，回来保持，靠自己按应急键
+  settingsKey();
+  click($('[data-set-toggle="sidebarRestore"]'));
+  ok('「回来自动还原」可以关掉', /"sidebarRestore":false/.test(store()), store());
+  click($('[data-settings-close]'));
+  leave();
+  ok('关掉自动还原后：离开照样伪装', bossShown());
+  enter();
+  ok('关掉自动还原后：回到页面保持伪装', bossShown());
+  esc(); esc();
+  ok('关掉自动还原后仍然能用应急键退出', !bossShown());
+  enter();
+  ok('手动退出后再回到页面，不会又弹出来', !bossShown());
+
+  // 关掉侧边栏模式本身：顺手还原自动伪装 + 摘掉监听
+  leave();
+  ok('离开 → 又自动伪装了', bossShown());
+  settingsKey();
+  click($('[data-set-toggle="sidebarMode"]'));
+  ok('关掉侧边栏模式时，顺手把自动伪装还原', !bossShown());
+  click($('[data-settings-close]'));
+  leave();
+  ok('关掉之后鼠标离开不再触发（监听也摘了）', !bossShown());
+
+  // 「恢复默认」也要照顾到这两项：透明度回 100%、侧边栏模式回关
+  settingsKey();
+  click($('[data-settings-reset]'));
+  ok('恢复默认：透明度回到 100%',
+    /"pageOpacity":100/.test(store()) && root.style.getPropertyValue('--ngax-opacity') === '1',
+    root.style.getPropertyValue('--ngax-opacity') + ' / ' + store());
+  ok('恢复默认：侧边栏模式回到关', !/"sidebarMode":true/.test(store()) && !bossShown(), store());
+  click($('[data-settings-close]'));
+  leave();
+  ok('恢复默认后鼠标离开不再触发', !bossShown());
+
+  win.close();
+}
+
 // ── 跑 ─────────────────────────────────────────────────────────────────
 
 (async () => {
@@ -1428,6 +1561,7 @@ async function testFallback() {
   await testBoards();
   await testNgaHis();
   await testRailNoDoubleRender();
+  await testOpacityAndSidebar();
   await testFallback();
   console.log('\n' + (fails ? '✗ ' + fails + ' / ' + checks + ' 项失败' : '✓ 全部 ' + checks + ' 项通过'));
   process.exit(fails ? 1 : 0);
