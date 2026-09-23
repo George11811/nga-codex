@@ -13,7 +13,7 @@
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/)。
 2. 打开 [nga-codex.user.js](https://github.com/George11811/nga-codex/blob/master/nga-codex.user.js)，点 Raw 后安装。
-3. 访问 `https://bbs.nga.cn/` —— 需要**已登录**（NGA 对游客直接返回 403，脚本会识别出来
+3. 访问 [bbs.nga.cn](https://bbs.nga.cn/) —— 需要**已登录**（NGA 对游客直接返回 403，脚本会识别出来
    并保留原生页面，不会瞎接管）。
 
 ## 预览
