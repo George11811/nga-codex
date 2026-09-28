@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA · Codex 外观
 // @namespace    https://bbs.nga.cn/
-// @version      1.1.0
+// @version      1.1.1
 // @description  把 NGA 换成 Codex 桌面 app 风格（左 rail + 主区 + 右侧代码面板，明暗双模式），带上班摸鱼用的应急伪装。只改外观，原生 DOM 和站点自己的 JS 全部保留。
 // @author       link（V2EX 版作者）· NGA 移植
 // @match        https://bbs.nga.cn/*

@@ -16,6 +16,16 @@
 3. 访问 [bbs.nga.cn](https://bbs.nga.cn/) —— 需要**已登录**（NGA 对游客直接返回 403，脚本会识别出来
    并保留原生页面，不会瞎接管）。
 
+### 前进 / 后退闪回原生页面（1.1.1）
+
+更新脚本后，先刷新已打开的 NGA 标签页再测试前进 / 后退；旧历史记录中的页面可能仍保存着旧脚本。
+新版在 `pageshow` / `popstate` 时同步恢复隐藏规则，并修复根节点 class、样式节点被重置的情况。
+从前进后退缓存恢复时保留现有界面和草稿，游客页及未接管页面仍显示原生内容。
+
+这覆盖脚本开始执行后的恢复过程。如果 Tampermonkey 在整页重载时注入晚于浏览器首帧，
+脚本无法遮挡自身运行之前已经显示的画面；`document-start` 也不是绝对的首帧保证。
+参见 [Tampermonkey 的运行时机说明](https://www.tampermonkey.net/documentation.php?locale=en#meta:run_at)。
+
 ## 预览
 
 ![风暴要火](reference/preview.png)
@@ -101,6 +111,7 @@ python .build/crawl-forums.py --resume    # 需要更新版面表时（礼貌爬
 ## 测试
 
 ```bash
+node .build/test-navigation.js          # 导航恢复回归（默认使用 .build/jt 的 jsdom；无需页面样本）
 node .build/test-bbcode.js              # BBSCode 渲染器：真实帖子正文 + 22 项定点断言
 
 mkdir -p /tmp/jt && cd /tmp/jt && npm install --no-save jsdom   # 集成测试需要 jsdom

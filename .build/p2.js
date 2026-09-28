@@ -869,7 +869,7 @@
 
     if (!isSupported(r)) {
       // 不接管：只保留 rail，原生页面照旧
-      document.documentElement.classList.remove(LOCK_CLASS);
+      setNativeLocked(false);
       document.querySelector(".ngax-main")?.remove();
       ensureRail(page);
       bindResizers(null); // 未接管路由也有 rail 拖拽把手
@@ -877,7 +877,7 @@
       return;
     }
 
-    document.documentElement.classList.add(LOCK_CLASS);
+    setNativeLocked(true);
     ensureRail(page);
     ensureMain();
     syncChrome(page);
@@ -890,14 +890,14 @@
     else if (r.kind === "member") {
       if (!renderMember(inner, page)) {
         // 拿不到 __UCPUSER（比如碰到了 ucp 的其它子页面）—— 退回原生页
-        document.documentElement.classList.remove(LOCK_CLASS);
+        setNativeLocked(false);
         document.querySelector(".ngax-main")?.remove();
         return;
       }
     } else if (!renderHome(inner, page)) {
       // 首页结构认不出来（NGA 改版 / 没登录）—— 老实退回原生页面，
       // 别给用户一个空壳。rail 留着，所以导航还能用。
-      document.documentElement.classList.remove(LOCK_CLASS);
+      setNativeLocked(false);
       document.querySelector(".ngax-main")?.remove();
       return;
     }

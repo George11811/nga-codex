@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA · Codex 外观
 // @namespace    https://bbs.nga.cn/
-// @version      1.1.0
+// @version      1.1.1
 // @description  把 NGA 换成 Codex 桌面 app 风格（左 rail + 主区 + 右侧代码面板，明暗双模式），带上班摸鱼用的应急伪装。只改外观，原生 DOM 和站点自己的 JS 全部保留。
 // @author       link（V2EX 版作者）· NGA 移植
 // @match        https://bbs.nga.cn/*
@@ -4230,7 +4230,7 @@
 
     if (!isSupported(r)) {
       // 不接管：只保留 rail，原生页面照旧
-      document.documentElement.classList.remove(LOCK_CLASS);
+      setNativeLocked(false);
       document.querySelector(".ngax-main")?.remove();
       ensureRail(page);
       bindResizers(null); // 未接管路由也有 rail 拖拽把手
@@ -4238,7 +4238,7 @@
       return;
     }
 
-    document.documentElement.classList.add(LOCK_CLASS);
+    setNativeLocked(true);
     ensureRail(page);
     ensureMain();
     syncChrome(page);
@@ -4251,14 +4251,14 @@
     else if (r.kind === "member") {
       if (!renderMember(inner, page)) {
         // 拿不到 __UCPUSER（比如碰到了 ucp 的其它子页面）—— 退回原生页
-        document.documentElement.classList.remove(LOCK_CLASS);
+        setNativeLocked(false);
         document.querySelector(".ngax-main")?.remove();
         return;
       }
     } else if (!renderHome(inner, page)) {
       // 首页结构认不出来（NGA 改版 / 没登录）—— 老实退回原生页面，
       // 别给用户一个空壳。rail 留着，所以导航还能用。
-      document.documentElement.classList.remove(LOCK_CLASS);
+      setNativeLocked(false);
       document.querySelector(".ngax-main")?.remove();
       return;
     }
@@ -9075,7 +9075,8 @@
       style.id = STYLE_ID;
       (document.head || document.documentElement).appendChild(style);
     }
-    style.textContent = RAW_CSS; // 始终刷新，避免旧版残留
+    // 恢复事件和观察器会重复调用；内容没变时别重建样式表。
+    if (style.textContent !== RAW_CSS) style.textContent = RAW_CSS;
   }
 
   let faviconObserver = null;
@@ -9210,6 +9211,74 @@
 
   let scheduled = false;
   let visitCounted = false;
+  let appearanceActive = false;
+  let nativeLocked = false;
+  let appliedPageUrl = null;
+
+  function currentPageUrl() {
+    return location.pathname + location.search;
+  }
+
+  function setNativeLocked(locked) {
+    // 单独记住接管意图，才能区分「站点清了 class」和主动回退原生页。
+    nativeLocked = locked;
+    document.documentElement.classList.toggle(LOCK_CLASS, locked);
+  }
+
+  function repairAppearance() {
+    if (!appearanceActive || typeof document === "undefined" || !document.documentElement || otherThemeActive()) return;
+    injectStyle();
+    const root = document.documentElement;
+    if (!root.classList.contains(ROOT_CLASS)) root.classList.add(ROOT_CLASS);
+    if (root.classList.contains(LOCK_CLASS) !== nativeLocked) setNativeLocked(nativeLocked);
+    const light = !isDarkMode();
+    if (root.classList.contains(LIGHT_CLASS) !== light) root.classList.toggle(LIGHT_CLASS, light);
+  }
+
+  function watchAppearance() {
+    let watchedHead = null;
+    const headObserver = new MutationObserver(repairAppearance);
+    const rootObserver = new MutationObserver(() => {
+      if (typeof document === "undefined" || !document.documentElement) return;
+      // document-start 时 head 可能还没有；解析或替换 head 后重新绑定。
+      if (watchedHead !== document.head) {
+        headObserver.disconnect();
+        watchedHead = document.head;
+        if (watchedHead) headObserver.observe(watchedHead, { childList: true });
+      }
+      repairAppearance();
+    });
+    rootObserver.observe(document.documentElement, {
+      attributes: true, attributeFilter: ["class"], childList: true
+    });
+    watchedHead = document.head;
+    if (watchedHead) headObserver.observe(watchedHead, { childList: true });
+  }
+
+  function restoreAppearance() {
+    if (otherThemeActive()) {
+      scheduleApply();
+      return;
+    }
+    // pageshow 比 popstate 更早，先同步补遮挡，不能等下一帧才藏原生内容。
+    // 相同 URL 保留 render() 的判定，避免把游客页/解析失败页重新强行锁住。
+    if (appliedPageUrl !== currentPageUrl()) {
+      appearanceActive = true;
+      setNativeLocked(lockableRoute(route()));
+    }
+    repairAppearance();
+    if (appliedPageUrl === currentPageUrl() && (!nativeLocked || document.querySelector(".ngax-main"))) {
+      // bfcache 保留了 DOM：不要销毁已加载的更多内容、展开状态和编辑中的草稿。
+      if (appearanceActive) {
+        syncTitle();
+        applyFavicon();
+        observeNative();
+      }
+      return;
+    }
+    scheduleApply();
+  }
+
   function scheduleApply() {
     if (scheduled) return;
     scheduled = true;
@@ -9217,11 +9286,15 @@
       scheduled = false;
       try {
         if (otherThemeActive()) {
+          appearanceActive = false;
+          nativeLocked = false;
           document.documentElement.classList.remove(ROOT_CLASS, LOCK_CLASS, "ngax-rail-open");
           document.querySelector(".ngax-main")?.remove();
           document.querySelector(".ngax-rail")?.remove();
           return;
         }
+        appearanceActive = true;
+        injectStyle();
         document.documentElement.classList.add(ROOT_CLASS);
         syncMode();
         // favicon 也在这里补一次：bootstrap 跑在 document-start，那时
@@ -9241,11 +9314,15 @@
         }
 
         render();
+        appliedPageUrl = currentPageUrl();
         lastSignature = PAGE ? pageSignature(PAGE) : "";
         observeNative();
       } catch (err) {
         // 解析失败时绝不破坏原站：撤掉接管，回退原生页面
         console.error("[nga-codex] 渲染失败，已回退原生页面", err);
+        appearanceActive = false;
+        nativeLocked = false;
+        appliedPageUrl = currentPageUrl();
         document.documentElement.classList.remove(ROOT_CLASS, LOCK_CLASS, "ngax-rail-open");
         document.querySelector(".ngax-main")?.remove();
         document.querySelector(".ngax-rail")?.remove();
@@ -9263,6 +9340,7 @@
 
     injectStyle();
     if (!otherThemeActive()) {
+      appearanceActive = true;
       syncMode();
       document.documentElement.classList.add(ROOT_CLASS);
       /*
@@ -9277,11 +9355,17 @@
        *      没有 #mmc 而把 ngax-locked 摘掉。错误页上没有 #mmc/#mc/.module_wrap，
        *      所以在我们锁着的那几十毫秒里它也基本不会变形。
        */
-      if (lockableRoute(route())) document.documentElement.classList.add(LOCK_CLASS);
+      setNativeLocked(lockableRoute(route()));
       applyFavicon();
       watchThemeColor();
     }
     applyVisualSettings();
+    watchAppearance();
+
+    // bfcache 恢复不会重跑 bootstrap / DOMContentLoaded；离开时也保留完整伪装。
+    window.addEventListener("pagehide", repairAppearance, true);
+    window.addEventListener("pageshow", restoreAppearance, true);
+    window.addEventListener("popstate", restoreAppearance, true);
 
     // 标签重新可见时再刷一次 favicon（部分浏览器未聚焦时会缓存旧图标）
     document.addEventListener("visibilitychange", () => {
@@ -9314,8 +9398,6 @@
         openSearch();
       }, true);
 
-      // 单页内锚点跳转（NGA 的「跳到最后回复」是普通链接，不需要特殊处理）
-      window.addEventListener("popstate", scheduleApply);
     });
   }
 
