@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA · Codex 外观
 // @namespace    https://bbs.nga.cn/
-// @version      1.1.1
+// @version      1.2.0
 // @description  把 NGA 换成 Codex 桌面 app 风格（左 rail + 主区 + 右侧代码面板，明暗双模式），带上班摸鱼用的应急伪装。只改外观，原生 DOM 和站点自己的 JS 全部保留。
 // @author       link（V2EX 版作者）· NGA 移植
 // @match        https://bbs.nga.cn/*
@@ -82,6 +82,12 @@
     pageOpacity: 100,
     /** 是否显示右侧代码面板（纯氛围装饰） */
     codePanel: true,
+    /**
+     * 底部回复栏是否收起（压成一行：单行输入 + 发送 + 展开按钮）。
+     * 刻意没放进设置面板 —— 回复栏自己带收起按钮，这个键只负责记住状态。
+     * 窄列（左栏 + 右侧代码面板都开着）时挺有用，所以默认展开、由用户自己收。
+     */
+    composerCollapsed: false,
     /** 代码面板语言：rust / python / typescript / go / java */
     lang: "rust",
     /** 代码面板视图："code" | "diff" */
@@ -229,6 +235,8 @@
     setPanelHidden(!cfg("codePanel"), false);
     // 侧边栏模式的监听随开关挂 / 摘（定义在「隐蔽性」那一段）
     syncSidebarMode();
+    // 回复栏的收起状态（定义在「回复栏」那一段）
+    syncComposerMin();
   }
 
   /** 完整的应用：视觉 + 重渲染 rail / 列表 / 详情 / 代码面板 */

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NGA · Codex 外观
 // @namespace    https://bbs.nga.cn/
-// @version      1.1.1
+// @version      1.2.0
 // @description  把 NGA 换成 Codex 桌面 app 风格（左 rail + 主区 + 右侧代码面板，明暗双模式），带上班摸鱼用的应急伪装。只改外观，原生 DOM 和站点自己的 JS 全部保留。
 // @author       link（V2EX 版作者）· NGA 移植
 // @match        https://bbs.nga.cn/*
@@ -82,6 +82,12 @@
     pageOpacity: 100,
     /** 是否显示右侧代码面板（纯氛围装饰） */
     codePanel: true,
+    /**
+     * 底部回复栏是否收起（压成一行：单行输入 + 发送 + 展开按钮）。
+     * 刻意没放进设置面板 —— 回复栏自己带收起按钮，这个键只负责记住状态。
+     * 窄列（左栏 + 右侧代码面板都开着）时挺有用，所以默认展开、由用户自己收。
+     */
+    composerCollapsed: false,
     /** 代码面板语言：rust / python / typescript / go / java */
     lang: "rust",
     /** 代码面板视图："code" | "diff" */
@@ -229,6 +235,8 @@
     setPanelHidden(!cfg("codePanel"), false);
     // 侧边栏模式的监听随开关挂 / 摘（定义在「隐蔽性」那一段）
     syncSidebarMode();
+    // 回复栏的收起状态（定义在「回复栏」那一段）
+    syncComposerMin();
   }
 
   /** 完整的应用：视觉 + 重渲染 rail / 列表 / 详情 / 代码面板 */
@@ -4080,6 +4088,11 @@
         document.documentElement.classList.toggle("ngax-rail-open");
         return;
       }
+      // 回复栏收起 / 展开
+      if (t.closest("[data-composer-min]")) {
+        setComposerMin(!composerMin());
+        return;
+      }
       if (t.closest("[data-copy-link]")) {
         copyText(location.href);
         return;
@@ -4163,6 +4176,8 @@
     setPanelHidden(panelHidden(), false);
     bindResizers(main);
     bindComposer(main);
+    // 主区是新建的：把回复栏的收起状态刷回去（设置里存着）
+    syncComposerMin();
     return main;
   }
 
@@ -5290,7 +5305,42 @@
       `<button type="button" class="ngax-tool-btn" data-tool="${k}" title="${escapeHtml(TOOL_TITLES[k])}">${TOOL_ICONS[k]}</button>`
     ).join("") +
       `<span class="ngax-composer-status"></span>` +
-      `<button type="button" class="ngax-send" data-send title="发送（Enter）" disabled>${ic("send")}</button>`;
+      `<button type="button" class="ngax-send" data-send title="发送（Enter）" disabled>${ic("send")}</button>` +
+      // 收起 / 展开：收起后工具栏只剩它和发送键，整条回复栏压成一行
+      `<button type="button" class="ngax-tool-btn ngax-composer-min" data-composer-min` +
+      ` title="收起回复栏" aria-label="收起回复栏" aria-expanded="true">${ic("chevronDown")}</button>`;
+  }
+
+  /* ---------- 回复栏：收起 / 展开 ----------
+   *
+   * 窄列（左栏 + 右侧代码面板都开着，窗口又不宽）时回复栏占地方，
+   * 收起后只剩「单行输入 + 发送 + 展开」，能多露出两行正文。
+   * 状态记在设置里（composerCollapsed），翻页 / 刷新后保持。
+   * 收起只切一个 class —— 走 visualOnly，不重渲染页面（免得把正文阅读位置冲掉）。
+   * ====================================== */
+
+  function composerMin() {
+    const box = document.querySelector(".ngax-composer");
+    return !!box && box.classList.contains("ngax-min");
+  }
+
+  /** 把收起状态刷到回复栏上（设置变化、主区重建后都要调一次） */
+  function syncComposerMin() {
+    const box = document.querySelector(".ngax-composer");
+    if (!box) return;
+    const on = !!cfg("composerCollapsed");
+    box.classList.toggle("ngax-min", on);
+    const btn = box.querySelector("[data-composer-min]");
+    if (!btn) return;
+    const label = on ? "展开回复栏" : "收起回复栏";
+    btn.innerHTML = ic(on ? "chevronUp" : "chevronDown");
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+    btn.setAttribute("aria-expanded", on ? "false" : "true");
+  }
+
+  function setComposerMin(on) {
+    setCfg("composerCollapsed", !!on, { visualOnly: true });
   }
 
   function bbEditEl() {
@@ -9063,6 +9113,61 @@
     html.ngax .ngax-main {
       opacity: var(--ngax-opacity, 1);
     }
+
+    /* ================= NGA 专属：底部回复栏（收起 + 自适应） =================
+     *
+     * 两个问题一起修：
+     *
+     *   1. 「没自适应」：工具条原来是不换行的 flex，13 个 28px 按钮 + 状态文字
+     *      构成了一个死板的 min-content 宽度 —— 窄列（左栏 + 右侧代码面板都开着、
+     *      窗口又不宽）时它比 composer 还宽，右边那几个图标被顶出可视区，
+     *      看起来就是「图标显示不全」。修法：工具条允许换行；状态文字本来就带
+     *      ellipsis，再给它 min-width:0 —— 不给的话它的「内容最小宽度」
+     *      同样会把工具条撑宽（这是图标被挤出去的第二个原因）。
+     *
+     *   2. 「占地方」：加一个收起按钮（回复栏自带 [data-composer-min]）。
+     *      收起态从「竖着堆」变成「横着一行」：只剩单行输入 + 发送 + 展开按钮，
+     *      工具栏其余按钮、实时预览、两个弹层都藏起来。
+     *
+     * composer 由 block 改成 flex 列，是为了让这两种状态共用同一份 DOM 顺序：
+     * 展开时 flex-direction:column 与原来的上下堆叠完全一致，收起时 row 就是一行。
+     */
+    .ngax-composer { display: flex; flex-direction: column; }
+
+    .ngax-composer-toolbar { flex-wrap: wrap; row-gap: 4px; }
+    .ngax-composer-status { flex: 1 1 60px; min-width: 0; }
+
+    /* 收起态：一行 —— [单行输入] [发送] [展开] */
+    .ngax-composer.ngax-min {
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+    }
+    .ngax-composer.ngax-min .ngax-md-edit {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      max-height: 24px;
+      overflow: hidden;
+    }
+    .ngax-composer.ngax-min .ngax-composer-toolbar {
+      flex: none;
+      gap: 2px;
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+    .ngax-composer.ngax-min .ngax-compose-preview,
+    .ngax-composer.ngax-min .ngax-plus-pop,
+    .ngax-composer.ngax-min .ngax-smile-pop,
+    .ngax-composer.ngax-min .ngax-composer-toolbar > *:not(.ngax-send):not(.ngax-composer-min) {
+      display: none !important;
+    }
+
+    /* 收起 / 展开按钮：跟在发送键后面，平时淡一点，别抢戏 */
+    .ngax-composer-min { color: var(--cx-text-faint); }
+    .ngax-composer-min:hover { color: var(--cx-text); }
   `;
 
 

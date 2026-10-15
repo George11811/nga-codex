@@ -287,7 +287,42 @@
       `<button type="button" class="ngax-tool-btn" data-tool="${k}" title="${escapeHtml(TOOL_TITLES[k])}">${TOOL_ICONS[k]}</button>`
     ).join("") +
       `<span class="ngax-composer-status"></span>` +
-      `<button type="button" class="ngax-send" data-send title="发送（Enter）" disabled>${ic("send")}</button>`;
+      `<button type="button" class="ngax-send" data-send title="发送（Enter）" disabled>${ic("send")}</button>` +
+      // 收起 / 展开：收起后工具栏只剩它和发送键，整条回复栏压成一行
+      `<button type="button" class="ngax-tool-btn ngax-composer-min" data-composer-min` +
+      ` title="收起回复栏" aria-label="收起回复栏" aria-expanded="true">${ic("chevronDown")}</button>`;
+  }
+
+  /* ---------- 回复栏：收起 / 展开 ----------
+   *
+   * 窄列（左栏 + 右侧代码面板都开着，窗口又不宽）时回复栏占地方，
+   * 收起后只剩「单行输入 + 发送 + 展开」，能多露出两行正文。
+   * 状态记在设置里（composerCollapsed），翻页 / 刷新后保持。
+   * 收起只切一个 class —— 走 visualOnly，不重渲染页面（免得把正文阅读位置冲掉）。
+   * ====================================== */
+
+  function composerMin() {
+    const box = document.querySelector(".ngax-composer");
+    return !!box && box.classList.contains("ngax-min");
+  }
+
+  /** 把收起状态刷到回复栏上（设置变化、主区重建后都要调一次） */
+  function syncComposerMin() {
+    const box = document.querySelector(".ngax-composer");
+    if (!box) return;
+    const on = !!cfg("composerCollapsed");
+    box.classList.toggle("ngax-min", on);
+    const btn = box.querySelector("[data-composer-min]");
+    if (!btn) return;
+    const label = on ? "展开回复栏" : "收起回复栏";
+    btn.innerHTML = ic(on ? "chevronUp" : "chevronDown");
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+    btn.setAttribute("aria-expanded", on ? "false" : "true");
+  }
+
+  function setComposerMin(on) {
+    setCfg("composerCollapsed", !!on, { visualOnly: true });
   }
 
   function bbEditEl() {

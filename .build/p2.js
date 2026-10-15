@@ -719,6 +719,11 @@
         document.documentElement.classList.toggle("ngax-rail-open");
         return;
       }
+      // 回复栏收起 / 展开
+      if (t.closest("[data-composer-min]")) {
+        setComposerMin(!composerMin());
+        return;
+      }
       if (t.closest("[data-copy-link]")) {
         copyText(location.href);
         return;
@@ -802,6 +807,8 @@
     setPanelHidden(panelHidden(), false);
     bindResizers(main);
     bindComposer(main);
+    // 主区是新建的：把回复栏的收起状态刷回去（设置里存着）
+    syncComposerMin();
     return main;
   }
 

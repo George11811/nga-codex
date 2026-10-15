@@ -601,6 +601,61 @@ EXTRA_CSS = """
     html.ngax .ngax-main {
       opacity: var(--ngax-opacity, 1);
     }
+
+    /* ================= NGA 专属：底部回复栏（收起 + 自适应） =================
+     *
+     * 两个问题一起修：
+     *
+     *   1. 「没自适应」：工具条原来是不换行的 flex，13 个 28px 按钮 + 状态文字
+     *      构成了一个死板的 min-content 宽度 —— 窄列（左栏 + 右侧代码面板都开着、
+     *      窗口又不宽）时它比 composer 还宽，右边那几个图标被顶出可视区，
+     *      看起来就是「图标显示不全」。修法：工具条允许换行；状态文字本来就带
+     *      ellipsis，再给它 min-width:0 —— 不给的话它的「内容最小宽度」
+     *      同样会把工具条撑宽（这是图标被挤出去的第二个原因）。
+     *
+     *   2. 「占地方」：加一个收起按钮（回复栏自带 [data-composer-min]）。
+     *      收起态从「竖着堆」变成「横着一行」：只剩单行输入 + 发送 + 展开按钮，
+     *      工具栏其余按钮、实时预览、两个弹层都藏起来。
+     *
+     * composer 由 block 改成 flex 列，是为了让这两种状态共用同一份 DOM 顺序：
+     * 展开时 flex-direction:column 与原来的上下堆叠完全一致，收起时 row 就是一行。
+     */
+    .ngax-composer { display: flex; flex-direction: column; }
+
+    .ngax-composer-toolbar { flex-wrap: wrap; row-gap: 4px; }
+    .ngax-composer-status { flex: 1 1 60px; min-width: 0; }
+
+    /* 收起态：一行 —— [单行输入] [发送] [展开] */
+    .ngax-composer.ngax-min {
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+    }
+    .ngax-composer.ngax-min .ngax-md-edit {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      max-height: 24px;
+      overflow: hidden;
+    }
+    .ngax-composer.ngax-min .ngax-composer-toolbar {
+      flex: none;
+      gap: 2px;
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+    .ngax-composer.ngax-min .ngax-compose-preview,
+    .ngax-composer.ngax-min .ngax-plus-pop,
+    .ngax-composer.ngax-min .ngax-smile-pop,
+    .ngax-composer.ngax-min .ngax-composer-toolbar > *:not(.ngax-send):not(.ngax-composer-min) {
+      display: none !important;
+    }
+
+    /* 收起 / 展开按钮：跟在发送键后面，平时淡一点，别抢戏 */
+    .ngax-composer-min { color: var(--cx-text-faint); }
+    .ngax-composer-min:hover { color: var(--cx-text); }
 """
 
 

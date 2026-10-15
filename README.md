@@ -58,6 +58,19 @@
   免得调滑杆时鼠标扫出窗口把面板盖住。用 `mouseout` 而不是 `window.blur`：
   点地址栏、开 devtools 都会 blur，但鼠标还在页面上，那不叫离开页面区域。
 
+### 底部回复栏：收起 / 自适应
+
+- **收起按钮**在工具条最右边（发送键后面）：点一下把回复栏压成一行
+  （单行输入 + 发送 + 展开），再点展开 —— 窄列时能多露出两行正文。
+  状态记在 `ngax:settings` 的 `composerCollapsed` 里，翻页 / 刷新后保持；
+  收起**不重渲染页面**（走 `visualOnly`，只切一个 class），草稿和已展开的内容都还在。
+  它只是回复栏自己的按钮，所以刻意没放进设置面板。
+- **自适应**：工具条改成可换行（`flex-wrap: wrap`），状态文字允许被压到 0
+  （`min-width: 0`，它本来就带 ellipsis）。以前工具条是死板的单行 flex ——
+  13 个 28px 按钮 + 状态文字构成一个 min-content 宽度，左栏和右侧代码面板都开着、
+  窗口又不宽时，它比回复栏本身还宽，右边几个图标被顶出可视区（「图标显示不全」）。
+  现在窄了换行，不会再有被裁掉 / 挤出去的情况。
+
 ## 设置面板
 ![风暴要火](reference/setting-btn.png)
 ![风暴要火](reference/setting-panel.png)
@@ -86,6 +99,8 @@ reference/               ← 参考的 V2EX 版（只读，不要改）
   smiles.js              ← 从 NGA 的 js_bbscode_core.js 抽出来的表情表
   test-bbcode.js         ← BBSCode 渲染器单测
   test-dom.js            ← jsdom 集成测试（用真实抓下来的页面）
+  test-navigation.js     ← 导航恢复回归（自建最小页面，不需要样本）
+  test-composer.js       ← 底部回复栏回归（收起 / 自适应，不需要样本）
   crawl-forums.py        ← 拼版面表（BFS + __UFICON 种子 + --search 关键词搜帖）
   extract-fids.js        ← 从 combine.js 抽 __UFICON 里的 fid 当种子
   restore-forums.py      ← 万一把 forums.json 覆盖了，从成品脚本里把版面表捞回来
@@ -112,11 +127,17 @@ python .build/crawl-forums.py --resume    # 需要更新版面表时（礼貌爬
 
 ```bash
 node .build/test-navigation.js          # 导航恢复回归（默认使用 .build/jt 的 jsdom；无需页面样本）
+node .build/test-composer.js            # 回复栏回归（收起 / 自适应；同样不需要样本）
 node .build/test-bbcode.js              # BBSCode 渲染器：真实帖子正文 + 22 项定点断言
 
 mkdir -p /tmp/jt && cd /tmp/jt && npm install --no-save jsdom   # 集成测试需要 jsdom
 JSDOM_DIR=/tmp/jt node <repo>/.build/test-dom.js                # 202 项集成断言
 ```
+
+> Windows 上系统临时目录会被清理（这套样本已经被吃掉一次），所以习惯上可以
+> 把样本另存一份，跑的时候指过去：
+> `TEMP=<repo>/.build/jt/samples node .build/test-dom.js`
+> （`.build/jt/` 已在 `.gitignore` 里 —— jsdom 和样本副本都不进版本库。）
 
 集成测试把**真实抓下来的 NGA 页面**灌进 jsdom（DOM 是真的、id/class/嵌套结构是真的），
 再把 NGA 原生 JS 的产物（`userInfo.setAll` 的 JSON、`postArg.proc` 的参数、

@@ -6,6 +6,10 @@
 node_modules/
 package-lock.json
 
+# 集成测试用到的 jsdom + 页面样本副本：.build/test-navigation.js / test-composer.js
+# 默认从这里读 jsdom；系统临时目录里的样本会被清理，另存一份在这儿更稳
+.build/jt/
+
 # Python
 __pycache__/
 *.pyc
