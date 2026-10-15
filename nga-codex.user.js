@@ -11,6 +11,7 @@
 // @icon         https://bbs.nga.cn/favicon.ico
 // @grant        none
 // @run-at       document-start
+// @updateURL    https://raw.githubusercontent.com/George11811/nga-codex/master/nga-codex.user.js
 // ==/UserScript==
 
 /*
